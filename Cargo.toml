@@ -1,0 +1,19 @@
+cargo-features = ["edition"]
+
+[package]
+name = "curveball"
+version = "0.1.0"
+authors = ["Boris-Chengbiao Zhou <bobo1239@web.de>"]
+edition = '2018'
+
+[dependencies]
+winit = "0.16.2"
+vulkano-shader-derive = { git = "https://github.com/vulkano-rs/vulkano.git" }
+env_logger = "0.5.10"
+log = "0.4.3"
+vulkano-win = { git = "https://github.com/vulkano-rs/vulkano.git" }
+vulkano = { git = "https://github.com/vulkano-rs/vulkano.git" }
+cgmath = "0.16.1"
+
+[build-dependencies]
+cheddar = "0.1.0"
