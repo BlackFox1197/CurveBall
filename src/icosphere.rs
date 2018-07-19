@@ -1,5 +1,4 @@
-use cgmath::InnerSpace;
-use cgmath::Vector3;
+use cgmath::{InnerSpace, Vector3};
 use std::collections::HashMap;
 
 use crate::vertex::Vertex;
@@ -105,20 +104,41 @@ fn create_icosahedron() -> (Vec<Vector3<f32>>, Vec<u32>) {
         Vector3::new(tau, 0., -1.),
     ];
     let mut indices = Vec::new();
-    // TODO: replace with static values and correct winding direction
+    // TODO: replace with static values
     for i in 0..12 {
         for j in 0..12 {
             for k in 0..12 {
                 if !(i < j && j < k) {
                     continue;
                 }
-                let a = (vertices[i] - vertices[j]).magnitude();
-                let b = (vertices[i] - vertices[k]).magnitude();
-                let c = (vertices[j] - vertices[k]).magnitude();
-                if (2. - a).abs() < 0.1 && (a - b).abs() < 0.1 && (a - c).abs() < 0.1 {
-                    indices.push(i as u32);
-                    indices.push(j as u32);
-                    indices.push(k as u32);
+                let a = vertices[j] - vertices[i];
+                let b = vertices[k] - vertices[i];
+                let c = vertices[k] - vertices[j];
+                let a_magn = a.magnitude();
+                let b_magn = b.magnitude();
+                let c_magn = c.magnitude();
+                if (2. - a_magn).abs() < 0.1
+                    && (2. - b_magn).abs() < 0.1
+                    && (2. - c_magn).abs() < 0.1
+                {
+                    let cross = a.cross(b);
+                    let expected = vertices[i] + vertices[j] + vertices[k];
+                    // TODO: Redo calculations; My last result was that these two branches should be swapped...
+                    if (cross.x == 0. && expected.x == 0.
+                        || cross.x.is_sign_positive() == expected.x.is_sign_positive())
+                        && (cross.y == 0. && expected.y == 0.
+                            || cross.y.is_sign_positive() == expected.y.is_sign_positive())
+                        && (cross.z == 0. && expected.z == 0.
+                            || cross.z.is_sign_positive() == expected.z.is_sign_positive())
+                    {
+                        indices.push(i as u32);
+                        indices.push(k as u32);
+                        indices.push(j as u32);
+                    } else {
+                        indices.push(i as u32);
+                        indices.push(j as u32);
+                        indices.push(k as u32);
+                    }
                 }
             }
         }

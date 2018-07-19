@@ -207,7 +207,7 @@ fn main() {
 
     // let indices = [0u16, 1, 2];
 
-    let (vertices, indices) = icosphere(5);
+    let (vertices, indices) = icosphere(6);
 
     // We now create a buffer that will store the shape of our triangle.
     let vertex_buffer = {
@@ -287,7 +287,9 @@ fn main() {
         // the entry point.
         .vertex_shader(vs.main_entry_point(), ())
         .triangle_list()
-        .polygon_mode_line()
+        // .polygon_mode_line()
+        .front_face_counter_clockwise()
+        .cull_mode_back()
         // Use a resizable viewport set to draw over the entire window
         .viewports_dynamic_scissors_irrelevant(1)
         .fragment_shader(fs.main_entry_point(), ())
