@@ -14,3 +14,7 @@ vulkano = { git = "https://github.com/vulkano-rs/vulkano.git" }
 vulkano-win = { git = "https://github.com/vulkano-rs/vulkano.git" }
 vulkano-shader-derive = { git = "https://github.com/vulkano-rs/vulkano.git" }
 winit = "0.16.2"
+
+[profile.release]
+# Workaround for driver issue; see https://github.com/vulkano-rs/vulkano/issues/831
+debug-assertions = true
