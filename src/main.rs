@@ -6,6 +6,7 @@ mod vertex;
 
 use std::mem;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use cgmath::{Deg, Euler, Matrix4, Point3, Quaternion, Rad, SquareMatrix, Vector3};
 use log::*;
@@ -31,10 +32,6 @@ use winit::{
 
 use crate::icosphere::icosphere;
 
-// TODO: sphere
-// - https://github.com/caosdoar/spheres
-// - http://blog.andreaskahler.com/2009/06/creating-icosphere-mesh-in-code.html
-
 // TODO: mesh optimization
 // - http://gfx.cs.princeton.edu/pubs/Sander_2007_%3ETR/tipsy.pdf
 // - https://tomforsyth1000.github.io/papers/fast_vert_cache_opt.html
@@ -44,45 +41,55 @@ use crate::icosphere::icosphere;
 fn main() {
     env_logger::init();
 
+    let debug = true;
     let instance = {
         // All the window-drawing functionalities are part of non-core extensions that we need
         // to enable manually. To do so, we ask the `vulkano_win` crate for the list of extensions
         // required to draw to a window.
         let mut extensions = vulkano_win::required_extensions();
-        extensions.ext_debug_report = true;
-        let layers = vec!["VK_LAYER_LUNARG_standard_validation"];
+        extensions.ext_debug_report = debug;
+        let layers = if debug {
+            vec!["VK_LAYER_LUNARG_standard_validation"]
+        } else {
+            Vec::new()
+        };
         Instance::new(None, &extensions, &layers).expect("failed to create Vulkan instance")
     };
 
-    let all = MessageTypes {
-        error: true,
-        warning: true,
-        performance_warning: true,
-        information: true,
-        debug: true,
-    };
-
-    // Must be kept alive!
-    let debug_callback = DebugCallback::new(&instance, all, |msg| {
-        macro_rules! fmt {
-            () => {
-                "[VK,{}] {}"
-            };
-        }
-        if msg.ty.error {
-            error!(fmt!(), msg.layer_prefix, msg.description);
-        } else if msg.ty.warning {
-            warn!(fmt!(), msg.layer_prefix, msg.description);
-        } else if msg.ty.performance_warning {
-            warn!(fmt!(), msg.layer_prefix, msg.description);
-        } else if msg.ty.information {
-            info!(fmt!(), msg.layer_prefix, msg.description);
-        } else if msg.ty.debug {
-            debug!(fmt!(), msg.layer_prefix, msg.description);
-        } else {
-            unreachable!("unknown debug message type")
+    // Must be kept alive or the mssages will disappear!
+    let debug_callback = if debug {
+        let all_message_types = MessageTypes {
+            error: true,
+            warning: true,
+            performance_warning: true,
+            information: true,
+            debug: true,
         };
-    }).unwrap();
+        Some(
+            DebugCallback::new(&instance, all_message_types, |msg| {
+                macro_rules! fmt {
+                    () => {
+                        "[VK,{}] {}"
+                    };
+                }
+                if msg.ty.error {
+                    error!(fmt!(), msg.layer_prefix, msg.description);
+                } else if msg.ty.warning {
+                    warn!(fmt!(), msg.layer_prefix, msg.description);
+                } else if msg.ty.performance_warning {
+                    warn!(fmt!(), msg.layer_prefix, msg.description);
+                } else if msg.ty.information {
+                    info!(fmt!(), msg.layer_prefix, msg.description);
+                } else if msg.ty.debug {
+                    debug!(fmt!(), msg.layer_prefix, msg.description);
+                } else {
+                    unreachable!("unknown debug message type")
+                };
+            }).unwrap(),
+        )
+    } else {
+        None
+    };
 
     // We then choose which physical device to use.
     //
@@ -101,7 +108,6 @@ fn main() {
     let physical = PhysicalDevice::enumerate(&instance)
         .next()
         .expect("no device available");
-    // Some little debug infos.
     println!(
         "Using device: {} (type: {:?})",
         physical.name(),
@@ -118,10 +124,10 @@ fn main() {
 
     // In a real-life application, we would probably use at least a graphics queue and a transfers
     // queue to handle data transfers in parallel. In this example we only use one queue.
-    let queue = physical
+    let queue_family = physical
         .queue_families()
         .find(|&q| {
-            // We take the first queue that supports drawing to our window.
+            // We take the first queue_family that supports drawing to our window.
             q.supports_graphics() && surface.is_supported(q).unwrap_or(false)
         })
         .expect("couldn't find a graphical queue family");
@@ -136,13 +142,11 @@ fn main() {
             physical,
             physical.supported_features(),
             &device_ext,
-            [(queue, 0.5)].iter().cloned(),
+            [(queue_family, 0.5)].iter().cloned(),
         ).expect("failed to create device")
     };
 
-    // Since we can request multiple queues, the `queues` variable is in fact an iterator. In this
-    // example we use only one queue, so we just retreive the first and only element of the
-    // iterator and throw it away.
+    // We only requested one queue.
     let queue = queues.next().unwrap();
 
     // The dimensions of the surface.
@@ -153,63 +157,43 @@ fn main() {
     // a swapchain allocates the color buffers that will contain the image that will ultimately
     // be visible on the screen. These images are returned alongside with the swapchain.
     let (mut swapchain, mut images) = {
-        // Querying the capabilities of the surface. When we create the swapchain we can only
-        // pass values that are allowed by the capabilities.
         let caps = surface
             .capabilities(physical)
             .expect("failed to get surface capabilities");
 
         dimensions = caps.current_extent.unwrap_or([1024, 768]);
 
-        // We choose the dimensions of the swapchain to match the current extent of the surface.
-        // If `caps.current_extent` is `None`, this means that the window size will be determined
-        // by the dimensions of the swapchain, in which case we just use the width and height defined above.
-
-        // The alpha mode indicates how the alpha value of the final image will behave. For example
-        // you can choose whether the window will be opaque or transparent.
+        // Only determines how the alpha value of the final window pixels are interpreted.
+        // (opaque vs. transparent window)
         let alpha = caps.supported_composite_alpha.iter().next().unwrap();
-
-        // Choosing the internal format that the images will have.
         let format = caps.supported_formats[0].0;
 
-        // Please take a look at the docs for the meaning of the parameters we didn't mention.
+        println!("Image format: {:?}", format);
+
+        let present_mode = if caps.present_modes.mailbox {
+            PresentMode::Mailbox
+        } else {
+            PresentMode::Fifo
+        };
+
         Swapchain::new(
             device.clone(),
             surface.clone(),
-            caps.min_image_count,
+            caps.min_image_count + 1, // TODO: What is the correct number for triple buffering?
             format,
             dimensions,
-            1,
+            1, // layers; multiple needed for 3D
             caps.supported_usage_flags,
             &queue,
             SurfaceTransform::Identity,
             alpha,
-            PresentMode::Fifo,
-            true,
-            None,
+            present_mode,
+            true, // clipped
+            None, // old_swapchain
         ).expect("failed to create swapchain")
     };
 
-    // let vertices = [
-    //     Vertex {
-    //         position: [0.0, 0.0, 0.0],
-    //     },
-    //     Vertex {
-    //         position: [0.0, -0.5, 0.0],
-    //     },
-    //     Vertex {
-    //         position: [0.5, -0.5, 0.0],
-    //     },
-    //     Vertex {
-    //         position: [0.5, 0.0, 0.0],
-    //     },
-    // ];
-
-    // let indices = [0u16, 1, 2];
-
     let (vertices, indices) = icosphere(6);
-
-    // We now create a buffer that will store the shape of our triangle.
     let vertex_buffer = {
         CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::all(), vertices.iter().cloned())
             .expect("failed to create buffer")
@@ -221,7 +205,8 @@ fn main() {
     let vs = shaders::vs::Shader::load(device.clone()).expect("failed to create shader module");
     let fs = shaders::fs::Shader::load(device.clone()).expect("failed to create shader module");
 
-    let proj = cgmath::perspective(
+    // TODO: pull out into a `Camera`; also handle swapchain recreations
+    let mut proj = cgmath::perspective(
         Rad(std::f32::consts::FRAC_PI_2),
         { dimensions[0] as f32 / dimensions[1] as f32 },
         0.01,
@@ -241,41 +226,26 @@ fn main() {
     let uniform_buffer =
         CpuBufferPool::<shaders::vs::ty::Data>::new(device.clone(), BufferUsage::all());
 
-    // The next step is to create a *render pass*, which is an object that describes where the
-    // output of the graphics pipeline will go. It describes the layout of the images
-    // where the colors, depth and/or stencil information will be written.
     let render_pass = Arc::new(
         single_pass_renderpass!(device.clone(),
-        attachments: {
-            // `color` is a custom name we give to the first and only attachment.
-            color: {
-                // `load: Clear` means that we ask the GPU to clear the content of this
-                // attachment at the start of the drawing.
-                load: Clear,
-                // `store: Store` means that we ask the GPU to store the output of the draw
-                // in the actual image. We could also ask it to discard the result.
-                store: Store,
-                // `format: <ty>` indicates the type of the format of the image. This has to
-                // be one of the types of the `vulkano::format` module (or alternatively one
-                // of your structs that implements the `FormatDesc` trait). Here we use the
-                // generic `vulkano::format::Format` enum because we don't know the format in
-                // advance.
-                format: swapchain.format(),
-                // TODO:
-                samples: 1,
+            attachments: {
+                // `color` is a custom name we give to the first and only attachment.
+                color: {
+                    load: Clear,
+                    store: Store,
+                    format: swapchain.format(),
+                    samples: 1, // TODO: Figure out if MSAA is possible atm
+                }
+            },
+            pass: {
+                // We use the attachment named `color` as the one and only color attachment.
+                color: [color],
+                // No depth-stencil attachment is indicated with empty brackets.
+                depth_stencil: {}
             }
-        },
-        pass: {
-            // We use the attachment named `color` as the one and only color attachment.
-            color: [color],
-            // No depth-stencil attachment is indicated with empty brackets.
-            depth_stencil: {}
-        }
-    ).unwrap(),
+        ).unwrap(),
     );
 
-    // Before we draw we have to create what is called a pipeline. This is similar to an OpenGL
-    // program, but much more specific.
     let pipeline = Arc::new(
         GraphicsPipeline::start()
         // We need to indicate the layout of the vertices.
@@ -328,12 +298,24 @@ fn main() {
     // that, we store the submission of the previous frame here.
     let mut previous_frame_end = Box::new(now(device.clone())) as Box<GpuFuture>;
 
+    let mut last_sec = Instant::now();
+    let mut fps = 0;
+
     loop {
         // It is important to call this function from time to time, otherwise resources will keep
         // accumulating and you will eventually reach an out of memory error.
         // Calling this function polls various fences in order to determine what the GPU has
         // already processed, and frees the resources that are no longer needed.
         previous_frame_end.cleanup_finished();
+
+        let now = Instant::now();
+        if now - last_sec >= Duration::from_secs(1) {
+            println!("fps: {}", fps);
+            last_sec = now;
+            fps = 0;
+        } else {
+            fps += 1;
+        }
 
         // If the swapchain needs to be recreated, recreate it
         if recreate_swapchain {
@@ -353,6 +335,13 @@ fn main() {
                 }
                 Err(err) => panic!("{:?}", err),
             };
+
+            proj = cgmath::perspective(
+                Rad(std::f32::consts::FRAC_PI_2),
+                { dimensions[0] as f32 / dimensions[1] as f32 },
+                0.01,
+                100.0,
+            );
 
             mem::replace(&mut swapchain, new_swapchain);
             mem::replace(&mut images, new_images);

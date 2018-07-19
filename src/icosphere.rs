@@ -3,6 +3,12 @@ use std::collections::HashMap;
 
 use crate::vertex::Vertex;
 
+/// Generates the vertices and triangle vertex indices of an icosphere with the specified
+/// subidivison level.
+///
+/// # References
+/// - <https://github.com/caosdoar/spheres>
+/// - <http://blog.andreaskahler.com/2009/06/creating-icosphere-mesh-in-code.html>
 pub fn icosphere(subdivison_level: u8) -> (Vec<Vertex>, Vec<u32>) {
     let (mut vertices, mut indices) = create_icosahedron();
 
