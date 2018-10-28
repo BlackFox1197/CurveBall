@@ -1,4 +1,4 @@
-#![cfg_attr(feature = "cargo-clippy", allow(ref_in_deref))]
+#![allow(clippy::ref_in_deref)]
 
 use cgmath::Vector3;
 use vulkano::impl_vertex;

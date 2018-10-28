@@ -1,4 +1,4 @@
-#![feature(rust_2018_preview, use_extern_macros, nll)]
+#![feature(nll)]
 
 mod icosphere;
 mod shaders;
@@ -53,7 +53,7 @@ fn main() {
         } else {
             Vec::new()
         };
-        Instance::new(None, &extensions, &layers).expect("failed to create Vulkan instance")
+        Instance::new(None, &extensions, layers).expect("failed to create Vulkan instance")
     };
 
     // Must be kept alive or the mssages will disappear!
@@ -85,7 +85,8 @@ fn main() {
                 } else {
                     unreachable!("unknown debug message type")
                 };
-            }).unwrap(),
+            })
+            .unwrap(),
         )
     } else {
         None
@@ -143,7 +144,8 @@ fn main() {
             physical.supported_features(),
             &device_ext,
             [(queue_family, 0.5)].iter().cloned(),
-        ).expect("failed to create device")
+        )
+        .expect("failed to create device")
     };
 
     // We only requested one queue.
@@ -190,7 +192,8 @@ fn main() {
             present_mode,
             true, // clipped
             None, // old_swapchain
-        ).expect("failed to create swapchain")
+        )
+        .expect("failed to create swapchain")
     };
 
     let (vertices, indices) = icosphere(6);
@@ -243,31 +246,32 @@ fn main() {
                 // No depth-stencil attachment is indicated with empty brackets.
                 depth_stencil: {}
             }
-        ).unwrap(),
+        )
+        .unwrap(),
     );
 
     let pipeline = Arc::new(
         GraphicsPipeline::start()
-        // We need to indicate the layout of the vertices.
-        // The type `SingleBufferDefinition` actually contains a template parameter corresponding
-        // to the type of each vertex. But in this code it is automatically inferred.
-        .vertex_input_single_buffer()
-        // A Vulkan shader can in theory contain multiple entry points, so we have to specify
-        // which one. The `main` word of `main_entry_point` actually corresponds to the name of
-        // the entry point.
-        .vertex_shader(vs.main_entry_point(), ())
-        .triangle_list()
-        // .polygon_mode_line()
-        .front_face_counter_clockwise()
-        .cull_mode_back()
-        // Use a resizable viewport set to draw over the entire window
-        .viewports_dynamic_scissors_irrelevant(1)
-        .fragment_shader(fs.main_entry_point(), ())
-        // We have to indicate which subpass of which render pass this pipeline is going to be used
-        // in. The pipeline will only be usable from this particular subpass.
-        .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
-        .build(device.clone())
-        .unwrap(),
+            // We need to indicate the layout of the vertices.
+            // The type `SingleBufferDefinition` actually contains a template parameter corresponding
+            // to the type of each vertex. But in this code it is automatically inferred.
+            .vertex_input_single_buffer()
+            // A Vulkan shader can in theory contain multiple entry points, so we have to specify
+            // which one. The `main` word of `main_entry_point` actually corresponds to the name of
+            // the entry point.
+            .vertex_shader(vs.main_entry_point(), ())
+            .triangle_list()
+            // .polygon_mode_line()
+            .front_face_counter_clockwise()
+            .cull_mode_back()
+            // Use a resizable viewport set to draw over the entire window
+            .viewports_dynamic_scissors_irrelevant(1)
+            .fragment_shader(fs.main_entry_point(), ())
+            // We have to indicate which subpass of which render pass this pipeline is going to be used
+            // in. The pipeline will only be usable from this particular subpass.
+            .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
+            .build(device.clone())
+            .unwrap(),
     );
 
     // The render pass we created above only describes the layout of our framebuffers. Before we
@@ -404,42 +408,51 @@ fn main() {
                 Err(err) => panic!("{:?}", err),
             };
 
-        let command_buffer = AutoCommandBufferBuilder::primary_one_time_submit(device.clone(), queue.family()).unwrap()
-            // Before we can draw, we have to *enter a render pass*. There are two methods to do
-            // this: `draw_inline` and `draw_secondary`. The latter is a bit more advanced and is
-            // not covered here.
-            //
-            // The third parameter builds the list of values to clear the attachments with. The API
-            // is similar to the list of attachments when building the framebuffers, except that
-            // only the attachments that use `load: Clear` appear in the list.
-            .begin_render_pass(framebuffers.as_ref().unwrap()[image_num].clone(), false,
-                               vec![[0.1, 0.1, 0.1, 1.0].into()])
-            .unwrap()
-
-            // We are now inside the first subpass of the render pass. We add a draw command.
-            //
-            // The last two parameters contain the list of resources to pass to the shaders.
-            // Since we used an `EmptyPipeline` object, the objects have to be `()`.
-            .draw_indexed(pipeline.clone(),
-                  DynamicState {
-                      line_width: None,
-                      // TODO: Find a way to do this without having to dynamically allocate a Vec every frame.
-                      viewports: Some(vec![Viewport {
-                          origin: [0.0, 0.0],
-                          dimensions: [dimensions[0] as f32, dimensions[1] as f32],
-                          depth_range: 0.0 .. 1.0,
-                      }]),
-                      scissors: None,
-                  },
-                  vertex_buffer.clone(), index_buffer.clone(), set.clone(), ())
-            .unwrap()
-
-            // We leave the render pass by calling `draw_end`. Note that if we had multiple
-            // subpasses we could have called `next_inline` (or `next_secondary`) to jump to the
-            // next subpass.
-            .end_render_pass()
-            .unwrap()
-            .build().unwrap();
+        let command_buffer =
+            AutoCommandBufferBuilder::primary_one_time_submit(device.clone(), queue.family())
+                .unwrap()
+                // Before we can draw, we have to *enter a render pass*. There are two methods to do
+                // this: `draw_inline` and `draw_secondary`. The latter is a bit more advanced and is
+                // not covered here.
+                //
+                // The third parameter builds the list of values to clear the attachments with. The API
+                // is similar to the list of attachments when building the framebuffers, except that
+                // only the attachments that use `load: Clear` appear in the list.
+                .begin_render_pass(
+                    framebuffers.as_ref().unwrap()[image_num].clone(),
+                    false,
+                    vec![[0.1, 0.1, 0.1, 1.0].into()],
+                )
+                .unwrap()
+                // We are now inside the first subpass of the render pass. We add a draw command.
+                //
+                // The last two parameters contain the list of resources to pass to the shaders.
+                // Since we used an `EmptyPipeline` object, the objects have to be `()`.
+                .draw_indexed(
+                    pipeline.clone(),
+                    &DynamicState {
+                        line_width: None,
+                        // TODO: Find a way to do this without having to dynamically allocate a Vec every frame.
+                        viewports: Some(vec![Viewport {
+                            origin: [0.0, 0.0],
+                            dimensions: [dimensions[0] as f32, dimensions[1] as f32],
+                            depth_range: 0.0..1.0,
+                        }]),
+                        scissors: None,
+                    },
+                    vertex_buffer.clone(),
+                    index_buffer.clone(),
+                    set.clone(),
+                    (),
+                )
+                .unwrap()
+                // We leave the render pass by calling `draw_end`. Note that if we had multiple
+                // subpasses we could have called `next_inline` (or `next_secondary`) to jump to the
+                // next subpass.
+                .end_render_pass()
+                .unwrap()
+                .build()
+                .unwrap();
 
         let future = previous_frame_end
             .join(acquire_future)
